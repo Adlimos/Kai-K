@@ -154,6 +154,7 @@ export interface DotRow {
   value: number | null
   n: number
   correct: number
+  avgMs?: number
 }
 
 /** Dot plot: an adaptive axis is honest here because position, not length, carries the value. */
@@ -229,6 +230,7 @@ export function TopicDots({ rows }: { rows: DotRow[] }) {
               <div className="text-ivory-dim">
                 {r.correct} of {r.n} correct
               </div>
+              {r.avgMs !== undefined && <div className="text-ivory-dim">{(r.avgMs / 1000).toFixed(1)}s per hand</div>}
             </div>
           )
         })()}

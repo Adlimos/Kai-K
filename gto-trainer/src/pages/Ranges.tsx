@@ -5,7 +5,8 @@ import { QuestionPanel } from "@/components/QuestionPanel"
 import { GRID_RANKS, gridHand } from "@/lib/cards"
 import { genRangeQuestion, type Question } from "@/lib/questions"
 import { ACTION_LABEL, actionFor, builtInPresets, rangePercent, type RangeAction, type RangeMap, type RangePreset } from "@/lib/ranges"
-import { useStore } from "@/lib/store"
+import { useGenOpts, useStore } from "@/lib/store"
+import { useAnswerClock } from "@/lib/useTimer"
 import { cn } from "@/lib/utils"
 
 const BUILT_INS = builtInPresets()
@@ -302,7 +303,9 @@ function RangeGrid({ cells, onPaint }: { cells: RangeMap; onPaint: (h: string) =
 
 function RangePractice({ preset }: { preset: RangePreset }) {
   const { recordAnswer } = useStore()
-  const [q, setQ] = useState<Question>(() => genRangeQuestion(preset))
+  const opts = useGenOpts()
+  const [q, setQ] = useState<Question>(() => genRangeQuestion(preset, opts))
+  const clock = useAnswerClock(q.id)
   const [sel, setSel] = useState<number | null>(null)
   const [tally, setTally] = useState({ r: 0, w: 0 })
   return (
@@ -323,11 +326,11 @@ function RangePractice({ preset }: { preset: RangePreset }) {
               if (sel !== null) return
               setSel(i)
               const ok = i === q.answer
-              recordAnswer("ranges", ok)
+              recordAnswer(q, ok, clock())
               setTally((t) => ({ r: t.r + (ok ? 1 : 0), w: t.w + (ok ? 0 : 1) }))
             }}
             onNext={() => {
-              setQ(genRangeQuestion(preset))
+              setQ(genRangeQuestion(preset, opts))
               setSel(null)
             }}
           />

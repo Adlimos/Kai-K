@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react"
 import { motion } from "framer-motion"
+import { Award, Lock } from "lucide-react"
 import { AccuracyLine, TopicDots, type DotRow, type LinePoint } from "@/components/Charts"
-import { TOPIC_META, type DrillTopic, type Topic } from "@/lib/questions"
-import { DURATIONS, dayKey, durationLabel, keyToDate, rankBoard, recordKey, useStore, type Bucket } from "@/lib/store"
+import { TOPIC_META, DRILL_TOPICS, kindLabel, type Topic } from "@/lib/questions"
+import { DURATIONS, dayKey, durationLabel, keyToDate, practiceStreak, rankBoard, recordKey, useStore, type Bucket } from "@/lib/store"
+import { BADGES } from "@/lib/badges"
+import { weakKinds } from "./Drill"
 import { cn } from "@/lib/utils"
 import { go } from "@/lib/nav"
 
@@ -13,8 +16,7 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: "month", label: "1 month" },
   { id: "all", label: "Total" },
 ]
-const TOPICS: Topic[] = ["potOdds", "ev", "outs", "preflop", "ranges"]
-const RECORD_TOPICS: DrillTopic[] = ["potOdds", "ev", "outs", "preflop", "mixed"]
+const TOPICS: Topic[] = ["potOdds", "ev", "outs", "preflop", "postflop", "equity", "ranges"]
 
 const sumBucket = (b: Bucket) => {
   let c = 0
@@ -26,7 +28,6 @@ const sumBucket = (b: Bucket) => {
   }
   return [c, w] as const
 }
-
 const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
 const fmtHour = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric" })
 
@@ -42,27 +43,29 @@ export function Stats() {
       .filter((e) => now - e.t < span + 3600_000)
     let correct = 0
     let wrong = 0
-    const byTopic: Record<string, [number, number]> = {}
-    for (const e of entries) {
+    let ms = 0
+    let timed = 0
+    const byTopic: Record<string, [number, number, number]> = {}
+    for (const e of entries)
       for (const [t, tally] of Object.entries(e.b)) {
         if (!tally) continue
         correct += tally[0]
         wrong += tally[1]
-        const cur = (byTopic[t] ??= [0, 0])
+        if (tally[2]) {
+          ms += tally[2]
+          timed += tally[0] + tally[1]
+        }
+        const cur = (byTopic[t] ??= [0, 0, 0])
         cur[0] += tally[0]
         cur[1] += tally[1]
+        cur[2] += tally[2] ?? 0
       }
-    }
-    // Time series: hourly for a day, daily for week/month, daily or weekly for all-time.
     const groups = new Map<string, { t: number; c: number; w: number; label: string; title: string }>()
     const firstT = entries.length ? Math.min(...entries.map((e) => e.t)) : now
     const weekly = period === "all" && now - firstT > 60 * 86400_000
     for (const e of entries) {
       const d = new Date(e.t)
-      let key: string
-      let label: string
-      let title: string
-      let t: number
+      let key: string, label: string, title: string, t: number
       if (period === "day") {
         key = e.k.slice(0, 13)
         t = e.t
@@ -94,21 +97,21 @@ export function Stats() {
     const rows: DotRow[] = TOPICS.map((t) => {
       const v = byTopic[t]
       const n = v ? v[0] + v[1] : 0
-      return { key: t, label: TOPIC_META[t].name, value: n ? (v[0] / n) * 100 : null, n, correct: v?.[0] ?? 0 }
+      return { key: t, label: TOPIC_META[t].name, value: n ? (v[0] / n) * 100 : null, n, correct: v?.[0] ?? 0, avgMs: v && v[2] && n ? v[2] / n : undefined }
     }).filter((r) => r.key !== "ranges" || r.n > 0)
-    return { correct, wrong, total: correct + wrong, points, rows }
+    return { correct, wrong, total: correct + wrong, points, rows, avgMs: timed ? ms / timed : null }
   }, [data.buckets, period])
 
   const acc = view.total ? (view.correct / view.total) * 100 : null
+  const streak = practiceStreak(data.buckets)
+  const weak = weakKinds(data.sub, 5)
 
-  // Records + ranks
-  const records = RECORD_TOPICS.map((t) => ({
+  const records = DRILL_TOPICS.map((t) => ({
     topic: t,
     cells: DURATIONS.map((d) => {
       const rec = data.records[recordKey(t, d)]
       const board = rankBoard(leaderboard, recordKey(t, d), meId, rec)
-      const me = board.find((r) => r.isMe)
-      return { d, rec, rank: rec ? me?.rank : undefined, of: board.length }
+      return { d, rec, rank: rec ? board.find((r) => r.isMe)?.rank : undefined, of: board.length }
     }),
   }))
 
@@ -117,7 +120,7 @@ export function Stats() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-[34px] leading-none sm:text-[42px]">My stats</h1>
-          <p className="mt-2 text-ivory-dim">Every answer you give in drills and timed runs lands here.</p>
+          <p className="mt-2 text-ivory-dim">Every answer you give in drills, reviews, dailies, races and timed runs lands here.</p>
         </div>
         <div role="tablist" aria-label="Time period" className="flex rounded-full border border-line bg-panel p-1">
           {PERIODS.map((p) => (
@@ -127,10 +130,7 @@ export function Stats() {
               aria-selected={period === p.id}
               type="button"
               onClick={() => setPeriod(p.id)}
-              className={cn(
-                "relative min-h-[40px] cursor-pointer rounded-full px-3.5 text-[14px] font-semibold sm:px-4",
-                period === p.id ? "text-[#1d140a]" : "text-ivory/80 hover:text-ivory",
-              )}
+              className={cn("relative min-h-[40px] cursor-pointer rounded-full px-3.5 text-[14px] font-semibold sm:px-4", period === p.id ? "text-[#1d140a]" : "text-ivory/80 hover:text-ivory")}
             >
               {period === p.id && <motion.span layoutId="period-pill" className="btn-brass absolute inset-0 rounded-full" transition={{ type: "spring", stiffness: 420, damping: 34 }} />}
               <span className="relative">{p.label}</span>
@@ -139,10 +139,11 @@ export function Stats() {
         </div>
       </header>
 
-      <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Tile label="Answered" value={view.total.toLocaleString()} />
         <Tile label="Right" value={view.correct.toLocaleString()} tone="good" />
         <Tile label="Wrong" value={view.wrong.toLocaleString()} tone="bad" />
+        <Tile label="Avg time per hand" value={view.avgMs ? `${(view.avgMs / 1000).toFixed(1)}s` : "—"} />
         <Tile label="Accuracy" value={acc === null ? "—" : `${acc.toFixed(1)}%`} big />
       </dl>
 
@@ -169,11 +170,79 @@ export function Stats() {
           </section>
           <section className="panel min-w-0 p-5 sm:p-6">
             <h2 className="font-display text-[22px]">Accuracy by topic</h2>
-            <p className="mb-4 text-[14px] text-ivory-dim">Your weakest topic sits furthest left.</p>
+            <p className="mb-4 text-[14px] text-ivory-dim">Your weakest topic sits furthest left. Hover for speed.</p>
             <TopicDots rows={view.rows} />
           </section>
         </div>
       )}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <section className="panel min-w-0 p-5 sm:p-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-display text-[22px]">Practice calendar</h2>
+            <span className="text-[15px]">
+              <span className="font-display text-[24px] text-brass">{streak}</span> <span className="text-ivory-dim">day streak</span>
+            </span>
+          </div>
+          <Heatmap buckets={data.buckets} goal={data.settings.goal} />
+        </section>
+        <section className="panel min-w-0 p-5 sm:p-6">
+          <h2 className="font-display text-[22px]">Weakest spots</h2>
+          {weak.length ? (
+            <>
+              <ul className="mt-3 flex flex-col">
+                {weak.map((w) => (
+                  <li key={w.kind} className="flex items-center justify-between gap-3 border-b border-line py-2.5 last:border-0">
+                    <span className="min-w-0 truncate">{kindLabel(w.kind)}</span>
+                    <span className="shrink-0 text-ivory-dim">
+                      <span className="font-semibold text-ivory">{Math.round(w.acc * 100)}%</span> of {w.n}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" onClick={() => go("drill-weak-spots")} className="btn-brass mt-4 min-h-[44px] cursor-pointer rounded-full px-5 font-semibold">
+                Drill these
+              </button>
+            </>
+          ) : (
+            <p className="mt-2 text-ivory-dim">Answer at least 5 of a question type to see where you leak. Anything under 90% shows up here.</p>
+          )}
+        </section>
+      </div>
+
+      <section className="panel min-w-0 p-5 sm:p-6">
+        <h2 className="font-display text-[22px]">Badges</h2>
+        <p className="mb-4 text-[14px] text-ivory-dim">
+          {Object.keys(data.badges).length} of {BADGES.length} earned
+        </p>
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {BADGES.map((b) => {
+            const got = !!data.badges[b.id]
+            const prog = b.progress?.(data)
+            return (
+              <li key={b.id} className={cn("flex items-start gap-3 rounded-[14px] border p-3.5", got ? "border-brass/50 bg-[rgba(214,169,78,.08)]" : "border-line")}>
+                <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", got ? "bg-brass text-[#1d140a]" : "bg-panel-2 text-ivory-dim")}>
+                  {got ? <Award className="h-5 w-5" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block font-semibold", !got && "text-ivory/80")}>{b.name}</span>
+                  <span className="block text-[13px] text-ivory-dim">{b.desc}</span>
+                  {!got && prog && (
+                    <span className="mt-1.5 flex items-center gap-2">
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+                        <span className="block h-full rounded-full bg-brass" style={{ width: `${(prog[0] / prog[1]) * 100}%` }} />
+                      </span>
+                      <span className="text-[12px] text-ivory-dim">
+                        {prog[0]}/{prog[1]}
+                      </span>
+                    </span>
+                  )}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
 
       <section className="panel min-w-0 p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
@@ -224,12 +293,74 @@ export function Stats() {
 
 function Tile({ label, value, tone, big }: { label: string; value: string; tone?: "good" | "bad"; big?: boolean }) {
   return (
-    <div className={cn("rounded-[16px] border border-line px-4 py-4", big ? "bg-[rgba(214,169,78,.1)] border-brass/40" : "bg-panel")}>
+    <div className={cn("rounded-[16px] border px-4 py-4", big ? "col-span-2 border-brass/40 bg-[rgba(214,169,78,.1)] md:col-span-1" : "border-line bg-panel")}>
       <dt className="flex items-center gap-2 text-[14px] text-ivory-dim">
         {tone && <span className={cn("h-2 w-2 rounded-full", tone === "good" ? "bg-verdigris" : "bg-oxblood-bright")} aria-hidden="true" />}
         {label}
       </dt>
-      <dd className={cn("mt-1 font-display leading-none", big ? "text-[40px] text-brass" : "text-[34px]")}>{value}</dd>
+      <dd className={cn("mt-1 font-display leading-none", big ? "text-[40px] text-brass" : "text-[32px]")}>{value}</dd>
+    </div>
+  )
+}
+
+/** Last 20 weeks, one square per day; colour steps relative to the daily goal. */
+function Heatmap({ buckets, goal }: { buckets: Record<string, Bucket>; goal: number }) {
+  const [hover, setHover] = useState<{ day: string; n: number } | null>(null)
+  const weeks = 20
+  const counts = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const [k, b] of Object.entries(buckets)) {
+      const [c, w] = sumBucket(b)
+      m.set(k.slice(0, 10), (m.get(k.slice(0, 10)) ?? 0) + c + w)
+    }
+    return m
+  }, [buckets])
+  const today = new Date()
+  const start = new Date(today)
+  start.setDate(today.getDate() - today.getDay() - (weeks - 1) * 7)
+  const cols: { day: string; n: number; future: boolean }[][] = []
+  for (let w = 0; w < weeks; w++) {
+    const col = []
+    for (let d = 0; d < 7; d++) {
+      const x = new Date(start)
+      x.setDate(start.getDate() + w * 7 + d)
+      const k = dayKey(x)
+      col.push({ day: k, n: counts.get(k) ?? 0, future: x > today })
+    }
+    cols.push(col)
+  }
+  const level = (n: number) => (n === 0 ? 0 : n < goal * 0.34 ? 1 : n < goal * 0.67 ? 2 : n < goal ? 3 : 4)
+  const fills = ["var(--panel-2)", "rgba(214,169,78,.28)", "rgba(214,169,78,.5)", "rgba(214,169,78,.75)", "var(--brass)"]
+  return (
+    <div className="mt-4">
+      <div className="overflow-x-auto">
+        <div className="flex w-max gap-[3px]" role="img" aria-label="Questions answered per day over the last 20 weeks">
+          {cols.map((col, i) => (
+            <div key={i} className="flex flex-col gap-[3px]">
+              {col.map((c) => (
+                <span
+                  key={c.day}
+                  className="h-[14px] w-[14px] rounded-[3px]"
+                  style={{ background: c.future ? "transparent" : fills[level(c.n)] }}
+                  onPointerEnter={() => !c.future && setHover({ day: c.day, n: c.n })}
+                  onPointerLeave={() => setHover(null)}
+                  title={c.future ? undefined : `${c.day}: ${c.n} answered`}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[13px] text-ivory-dim">
+        <span>{hover ? `${keyToDate(hover.day).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}: ${hover.n} answered` : `Full colour means you hit your goal of ${goal}.`}</span>
+        <span className="flex items-center gap-1">
+          Less
+          {fills.map((f, i) => (
+            <span key={i} className="h-3 w-3 rounded-[3px]" style={{ background: f }} />
+          ))}
+          More
+        </span>
+      </div>
     </div>
   )
 }

@@ -7,6 +7,12 @@ A GTO poker trainer built with React, Tailwind and framer-motion.
 - Range builder: paint a 13x13 chart, save presets, practise them
 - My stats: 1 day / 1 week / 1 month / total, accuracy over time (auto-scaled axis), accuracy by topic, timed records with leaderboard rank
 - Leaderboard: shared when opened as a claude.ai artifact (db capability); falls back to this-device storage elsewhere
+- Learn: 10 lessons with formulas, worked examples, common mistakes and live calculators; a "How to solve this" help sheet on every question
+- Post-flop strategy (c-bet by texture, MDF, bluff ratio, SPR), range equity (value/check/bluff, equity vs range, all-in matchups), implied odds
+- Difficulty levels, mixed pre-flop strategies, 6-max and 9-handed tables, stack depth
+- Daily challenge (same 20 hands for everyone), mistake review with spaced repetition, weak-spot drills, speed tracking
+- Streaks, daily goal, practice calendar, badges, nicknames and clubs, shareable hand links, calculators page
+- Head-to-head races (needs the artifact `room` capability; shows a notice without it)
 
 ## Build
 

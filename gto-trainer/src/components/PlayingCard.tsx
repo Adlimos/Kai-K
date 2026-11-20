@@ -32,7 +32,7 @@ export function PlayingCard({ card, faceDown, size = "md", delay = 0, from = { x
       role="img"
       aria-label={label}
       className={className}
-      style={{ width: d.w, height: d.h, perspective: 600 }}
+      style={{ width: `calc(${d.w}px * var(--card-scale, 1))`, height: `calc(${d.h}px * var(--card-scale, 1))`, perspective: 600 }}
       initial={reduce ? false : { x: from.x, y: from.y, opacity: 0, rotate: -12, scale: 0.8 }}
       animate={{ x: 0, y: 0, opacity: 1, rotate: 0, scale: 1 }}
       transition={{ delay, type: "spring", stiffness: 260, damping: 24 }}
@@ -59,12 +59,12 @@ export function PlayingCard({ card, faceDown, size = "md", delay = 0, from = { x
           {card && (
             <>
               <div className="absolute left-[9%] top-[5%] flex flex-col items-center leading-none" style={{ color }}>
-                <span className="font-display" style={{ fontSize: d.rank, letterSpacing: card.r === 8 ? "-0.06em" : 0 }}>
+                <span className="font-display" style={{ fontSize: `calc(${d.rank}px * var(--card-scale, 1))`, letterSpacing: card.r === 8 ? "-0.06em" : 0 }}>
                   {rankText(card.r)}
                 </span>
-                <span style={{ fontSize: d.rank * 0.72, marginTop: 1 }}>{SUIT_GLYPH[suit]}</span>
+                <span style={{ fontSize: `calc(${d.rank * 0.72}px * var(--card-scale, 1))`, marginTop: 1 }}>{SUIT_GLYPH[suit]}</span>
               </div>
-              <span className="absolute bottom-[4%] right-[8%] leading-none" style={{ color, fontSize: d.pip }}>
+              <span className="absolute bottom-[4%] right-[8%] leading-none" style={{ color, fontSize: `calc(${d.pip}px * var(--card-scale, 1))` }}>
                 {SUIT_GLYPH[suit]}
               </span>
             </>
